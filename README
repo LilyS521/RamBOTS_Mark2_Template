@@ -1,0 +1,15 @@
+ReadMe template
+
+The README shall describe the overall project structure and provide a high-level explanation of each major software subsystem. It should also include the commands required to run.
+
+Before considering a file documented, verify:
+•	File has a summary at the top
+•	Summary explains the physical/robot purpose
+•	Major methods are documented
+•	Method inputs are documented
+•	Method outputs are documented
+•	Units are specified
+•	Important connections to other methods/files are documented
+•	Testing method is identified
+•	README structure reflects major files/directories
+•	Commits clearly describe changes

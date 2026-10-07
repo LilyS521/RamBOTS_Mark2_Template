@@ -1,0 +1,112 @@
+<!-- 
+This is the HTML file that builds the app.
+ version: 1.0
+-->
+
+<!--
+Date: 10/7/2026
+Programmer: Lily Solheim
+Reviewer:
+Changes made: The file was created
+Next: Add individual comments for each function.
+Recomendations:
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ESP32 Messages</title>
+<style>
+:root{--bg:#10201c;--panel:#18302a;--ink:#e8f1ec;--dim:#8fa89d;--accent:#f2c14e;--ok:#5fd38d;--bad:#e8695a;
+  padding-top:env(safe-area-inset-top,0);padding-bottom:env(safe-area-inset-bottom,0);box-sizing:border-box}
+@media (prefers-color-scheme:light){:root{--bg:#f1f5f2;--panel:#fff;--ink:#14231e;--dim:#5b6f66;--accent:#a8740a;--ok:#1d8a4d;--bad:#c0392b}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,sans-serif;display:flex;flex-direction:column}
+header{padding:14px 16px 10px;display:flex;align-items:center;gap:10px}
+h1{font-size:1.15rem;margin:0;flex:1}
+#dot{width:12px;height:12px;border-radius:50%;background:var(--bad)}
+#dot.on{background:var(--ok)}
+#status{font-size:.85rem;color:var(--dim)}
+.bar{padding:0 16px 10px}
+button{padding:12px 14px;border-radius:10px;border:0;background:var(--accent);color:#1a1405;font:inherit;font-weight:600}
+#connect{width:100%}
+button.alt{background:var(--panel);color:var(--ink);border:1px solid var(--dim)}
+button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#log{flex:1;overflow-y:auto;margin:0 16px;padding:4px 0 12px;display:flex;flex-direction:column;gap:8px}
+.msg{background:var(--panel);border-left:4px solid var(--accent);border-radius:8px;padding:9px 12px;word-break:break-word}
+.msg time{display:block;font-size:.72rem;color:var(--dim);margin-bottom:2px}
+.empty{color:var(--dim);margin:auto;text-align:center;max-width:28ch}
+footer{padding:10px 16px;display:flex;gap:8px;align-items:center;font-size:.85rem;color:var(--dim)}
+footer label{display:flex;gap:6px;align-items:center;flex:1}
+</style>
+</head>
+<body>
+<header><span id="dot"></span><h1>ESP32 messages</h1><span id="status">Not connected</span></header>
+<div class="bar"><button id="connect">Connect to ESP32</button></div>
+<main id="log" aria-live="polite"><p class="empty" id="empty">Tap Connect, then choose your ESP32 from the list.</p></main>
+<footer>
+  <label><input type="checkbox" id="scroll" checked> Follow newest</label>
+  <button class="alt" id="clear">Clear</button>
+</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const log = $('log'), dot = $('dot'), statusEl = $('status'), btn = $('connect');
+const UART_SVC = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const UART_TX  = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // ESP32 -> phone (notify)
+let device = null, buf = '', flushTimer = null;
+const dec = new TextDecoder();
+
+function setStatus(t, on) { statusEl.textContent = t; dot.classList.toggle('on', !!on); }
+
+function addMessage(text) {
+  if (!text.trim()) return;
+  const e = $('empty'); if (e) e.remove();
+  const el = document.createElement('div'); el.className = 'msg';
+  const t = document.createElement('time'); t.textContent = new Date().toLocaleTimeString();
+  const p = document.createElement('div'); p.textContent = text;
+  el.append(t, p); log.append(el);
+  if ($('scroll').checked) log.scrollTop = log.scrollHeight;
+}
+
+// BLE sends long messages in small chunks, so collect them until a newline
+// (or a short pause) marks the end of one message.
+function onChunk(value) {
+  buf += dec.decode(value, { stream: true });
+  const parts = buf.split('\n');
+  buf = parts.pop();
+  parts.forEach(addMessage);
+  clearTimeout(flushTimer);
+  if (buf) flushTimer = setTimeout(() => { addMessage(buf); buf = ''; }, 300);
+}
+
+async function connect() {
+  if (!navigator.bluetooth) {
+    setStatus('Bluetooth not supported here. Use Chrome on Android, or Bluefy on iPhone.', false);
+    return;
+  }
+  try {
+    setStatus('Choose a device…', false);
+    device = await navigator.bluetooth.requestDevice({ filters: [{ services: [UART_SVC] }] });
+    device.addEventListener('gattserverdisconnected', onDisconnect);
+    setStatus('Connecting…', false);
+    const server = await device.gatt.connect();
+    const chr = await (await server.getPrimaryService(UART_SVC)).getCharacteristic(UART_TX);
+    await chr.startNotifications();
+    chr.addEventListener('characteristicvaluechanged', e => onChunk(e.target.value));
+    setStatus('Connected to ' + (device.name || 'ESP32'), true);
+    btn.textContent = 'Disconnect';
+  } catch (err) {
+    setStatus(err.name === 'NotFoundError' ? 'No device chosen' : 'Could not connect: ' + err.message, false);
+  }
+}
+
+function onDisconnect() { setStatus('Disconnected', false); btn.textContent = 'Reconnect to ESP32'; }
+
+btn.onclick = () => (device && device.gatt.connected) ? device.gatt.disconnect() : connect();
+$('clear').onclick = () => { log.innerHTML = '<p class="empty" id="empty">No messages yet.</p>'; };
+</script>
+</body>
+</html>

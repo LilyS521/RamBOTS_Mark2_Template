@@ -1,0 +1,16 @@
+# Compiled Windows executables
+*.exe
+
+# C++ compiler output
+*.o
+*.obj
+
+# VS Code local settings
+.vscode/
+
+# Generated CSV diagnostic logs
+TestBench/src/diagnostic_log.csv
+TestBench/src/diagnostic_integration.csv
+TestBench/src/sensor_A_log.csv
+TestBench/src/sensor_B_log.csv
+TestBench/src/shared_sensor_log.csv

@@ -14,3 +14,10 @@ TestBench/src/diagnostic_integration.csv
 TestBench/src/sensor_A_log.csv
 TestBench/src/sensor_B_log.csv
 TestBench/src/shared_sensor_log.csv
+
+# PlatformIO generated build files
+.pio/
+
+# Local PlatformIO and editor settings
+.pioenvs/
+.piolibdeps/

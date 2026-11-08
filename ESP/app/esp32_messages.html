@@ -1,6 +1,6 @@
 <!-- 
 This is the HTML file that builds the app.
- version: 1.0
+ version: 2.0
 -->
 
 <!--
@@ -10,6 +10,13 @@ Reviewer:
 Changes made: The file was created
 Next: Add individual comments for each function.
 Recomendations:
+-->
+<!--
+Date: 11/7/2026
+Programmer: Lily Solheim
+Reviewer:
+Changes made: function added so that the user can send a command to the esp 32
+Next: 
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -38,6 +45,11 @@ button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .msg{background:var(--panel);border-left:4px solid var(--accent);border-radius:8px;padding:9px 12px;word-break:break-word}
 .msg time{display:block;font-size:.72rem;color:var(--dim);margin-bottom:2px}
 .empty{color:var(--dim);margin:auto;text-align:center;max-width:28ch}
+.cmd{padding:8px 16px;display:flex;gap:8px}
+.cmd input{flex:1;min-width:0;padding:12px;border-radius:10px;border:1px solid var(--dim);background:var(--panel);color:var(--ink);font:inherit}
+.cmd input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.cmd button:disabled,.cmd input:disabled{opacity:.45}
+.msg.sent{border-left-color:var(--ok);opacity:.85}
 footer{padding:10px 16px;display:flex;gap:8px;align-items:center;font-size:.85rem;color:var(--dim)}
 footer label{display:flex;gap:6px;align-items:center;flex:1}
 </style>
@@ -46,6 +58,10 @@ footer label{display:flex;gap:6px;align-items:center;flex:1}
 <header><span id="dot"></span><h1>ESP32 messages</h1><span id="status">Not connected</span></header>
 <div class="bar"><button id="connect">Connect to ESP32</button></div>
 <main id="log" aria-live="polite"><p class="empty" id="empty">Tap Connect, then choose your ESP32 from the list.</p></main>
+<div class="cmd">
+  <input id="cmdInput" placeholder="Type a command, e.g. led on" autocapitalize="off" autocomplete="off" enterkeyhint="send" aria-label="Command to send to the ESP32" disabled>
+  <button id="send" disabled>Send</button>
+</div>
 <footer>
   <label><input type="checkbox" id="scroll" checked> Follow newest</label>
   <button class="alt" id="clear">Clear</button>
@@ -56,15 +72,18 @@ const $ = id => document.getElementById(id);
 const log = $('log'), dot = $('dot'), statusEl = $('status'), btn = $('connect');
 const UART_SVC = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const UART_TX  = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // ESP32 -> phone (notify)
-let device = null, buf = '', flushTimer = null;
+const UART_RX  = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // phone -> ESP32 (write)
+const MAX_CMD_BYTES = 20;                                // safe size for one BLE write
+let device = null, rxChar = null, buf = '', flushTimer = null;
 const dec = new TextDecoder();
 
 function setStatus(t, on) { statusEl.textContent = t; dot.classList.toggle('on', !!on); }
+function setCommandEnabled(on) { $('cmdInput').disabled = !on; $('send').disabled = !on; }
 
-function addMessage(text) {
+function addMessage(text, cls) {
   if (!text.trim()) return;
   const e = $('empty'); if (e) e.remove();
-  const el = document.createElement('div'); el.className = 'msg';
+  const el = document.createElement('div'); el.className = 'msg' + (cls ? ' ' + cls : '');
   const t = document.createElement('time'); t.textContent = new Date().toLocaleTimeString();
   const p = document.createElement('div'); p.textContent = text;
   el.append(t, p); log.append(el);
@@ -93,17 +112,35 @@ async function connect() {
     device.addEventListener('gattserverdisconnected', onDisconnect);
     setStatus('Connecting…', false);
     const server = await device.gatt.connect();
-    const chr = await (await server.getPrimaryService(UART_SVC)).getCharacteristic(UART_TX);
+    const service = await server.getPrimaryService(UART_SVC);
+    const chr = await service.getCharacteristic(UART_TX);
+    rxChar = await service.getCharacteristic(UART_RX);
     await chr.startNotifications();
     chr.addEventListener('characteristicvaluechanged', e => onChunk(e.target.value));
     setStatus('Connected to ' + (device.name || 'ESP32'), true);
     btn.textContent = 'Disconnect';
+    setCommandEnabled(true);
   } catch (err) {
     setStatus(err.name === 'NotFoundError' ? 'No device chosen' : 'Could not connect: ' + err.message, false);
   }
 }
 
-function onDisconnect() { setStatus('Disconnected', false); btn.textContent = 'Reconnect to ESP32'; }
+function onDisconnect() { rxChar = null; setCommandEnabled(false); setStatus('Disconnected', false); btn.textContent = 'Reconnect to ESP32'; }
+
+async function sendCommand() {
+  const input = $('cmdInput');
+  const text = input.value.trim();
+  if (!text || !rxChar) return;
+  const bytes = new TextEncoder().encode(text);
+  if (bytes.length > MAX_CMD_BYTES) { setStatus('Command too long (max ' + MAX_CMD_BYTES + ' bytes)', true); return; }
+  try {
+    await rxChar.writeValue(bytes);
+    addMessage('> ' + text, 'sent');   // show what was sent, in the same list
+    input.value = '';
+  } catch (err) { setStatus('Send failed: ' + err.message, true); }
+}
+$('send').onclick = sendCommand;
+$('cmdInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendCommand(); });
 
 btn.onclick = () => (device && device.gatt.connected) ? device.gatt.disconnect() : connect();
 $('clear').onclick = () => { log.innerHTML = '<p class="empty" id="empty">No messages yet.</p>'; };
